@@ -134,7 +134,7 @@ def generate_frames(video_source):
         print("Error opening video source.")
         return
 
-    frame_skip = 5  # Process every second frame
+    frame_skip = 2  # Process every second frame
     frame_count = 0
     resize_factor = 0.5  # Reduce resolution to speed up processing
 
