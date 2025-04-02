@@ -4,6 +4,8 @@ import torch
 import numpy as np
 import time
 import threading
+import smtplib
+from email.message import EmailMessage
 import winsound  # Windows alert sound
 from ultralytics import YOLO
 from deep_sort_realtime.deepsort_tracker import DeepSort
@@ -33,6 +35,59 @@ stop_video_flag = threading.Event()
 counting_enabled = False  # Toggle person counting
 detected_persons = []  # Define globally if used across functions
 selected_gender = "both"
+# Dictionary to store last alert time per person
+last_alert_time = {}
+
+# Set cooldown time in seconds
+ALERT_INTERVAL = 20  # 20 seconds
+
+UPLOAD_FOLDER = "uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# ✅ Modified email function using your SMTP settings
+def send_alert_email(email, frame, person_id):
+    """Send alert email with detected person's image."""
+    sender_email = "viveksapkale0022@gmail.com"
+    sender_password = "vppp mprd fvbz mqbn"
+    subject = "⚠️ Restricted Area Violation Alert"
+    
+    
+    # Save frame
+    timestamp = int(time.time())
+    image_filename = f"alert_{person_id}_{timestamp}.jpg"
+    image_path = os.path.join(UPLOAD_FOLDER, image_filename)
+    cv2.imwrite(image_path, frame)
+    print(f"Captured frame saved at {image_path}")
+
+    # Save frame as image
+    image_path = f"detected_person_{person_id}.jpg"
+    cv2.imwrite(image_path, frame)
+
+    # Create email message
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = sender_email
+    msg["To"] = email
+    msg.set_content(f"Person {person_id}{gender_labels} entered the restricted area. See attached image.")
+
+    # Attach captured image
+    with open(image_path, "rb") as img:
+        msg.add_attachment(img.read(), maintype="image", subtype="jpeg", filename=image_path)
+
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login(sender_email, sender_password)
+            server.send_message(msg)
+        print(f"✅ Email alert sent to {email} for person {person_id}")
+
+        # Remove saved image after sending
+        os.remove(image_path)
+
+    except Exception as e:
+        print("❌ Error sending email:", e)
+
+
 
 
 
@@ -126,6 +181,7 @@ def track_person(bbox):
 
 
 
+
 def generate_frames(video_source):
     """Generate video frames for streaming with improved processing."""
     global counting_enabled, restricted_area, stop_video_flag, selected_gender
@@ -209,9 +265,26 @@ def generate_frames(video_source):
                                   if frame_alert:
                                       play_alert()  # Function to play alert sound
                                       print("Playing alert sound...")
-                                      cv2.putText(frame, "ALERT!", (10, frame.shape[0] - 80), cv2.FONT_HERSHEY_SIMPLEX,
+                                      cv2.putText(frame, "ALERT!", (50, frame.shape[0] - 150), cv2.FONT_HERSHEY_SIMPLEX,
                                                   1, (0, 0, 255), 2, cv2.LINE_AA)
-                                                                    
+                        
+                                  if frame_alert:
+                                      current_time = time.time()
+                                      
+                                      # Check if enough time has passed since last alert
+                                      if person_id not in last_alert_time or current_time - last_alert_time[person_id] >= ALERT_INTERVAL:
+                                          play_alert()  # Function to play alert sound
+                                          print("Playing alert sound...")
+                                          cv2.putText(frame, "ALERT!", (50, frame.shape[0] - 150), cv2.FONT_HERSHEY_SIMPLEX,
+                                                      1, (0, 0, 255), 2, cv2.LINE_AA)
+
+                                          # Capture frame and send email in a separate thread
+                                          alert_frame = frame.copy()
+                                          threading.Thread(target=send_alert_email, args=("viveksapkale022@gmail.com", alert_frame, person_id)).start()
+
+                                          # Update last alert time
+                                          last_alert_time[person_id] = current_time  
+                                                                                    
                                       
                         if person_id not in processing or not processing[person_id]:
                           face_crop = frame[y1:y2, x1:x2]
