@@ -5,6 +5,7 @@ import numpy as np
 import time
 import threading
 import smtplib
+import face_recognition
 from email.message import EmailMessage
 import winsound  # Windows alert sound
 from ultralytics import YOLO
@@ -177,6 +178,49 @@ def track_person(bbox):
     return person_counter
 
 
+# Directory containing known authorized face images
+authorized_faces_dir = "authorized_faces"
+authorized_encodings = {}  # Dictionary to store encodings
+
+# Load and encode all authorized faces
+for filename in os.listdir(authorized_faces_dir):
+    if filename.endswith(".jpg") or filename.endswith(".png"):  
+        path = os.path.join(authorized_faces_dir, filename)
+        image = face_recognition.load_image_file(path)
+        encodings = face_recognition.face_encodings(image)
+        
+        if encodings:  # Check if encoding was found
+            person_name = os.path.splitext(filename)[0]  # Use filename as the name
+            authorized_encodings[person_name] = encodings[0]  # Store first encoding
+
+print(f"✅ Loaded {len(authorized_encodings)} authorized faces.")
+
+def recognize_face(face_crop, x1, y1, frame):
+    """
+    Recognizes the face by comparing it with stored encodings.
+    If the face matches, it marks the person as authorized.
+    If no match is found, it marks them as unauthorized.
+    """
+    face_encodings = face_recognition.face_encodings(face_crop)
+    
+    if face_encodings:
+        match_found = False
+        for name, stored_encoding in authorized_encodings.items():
+            match = face_recognition.compare_faces([stored_encoding], face_encodings[0])
+            if match[0]:  # If a match is found
+                match_found = True
+                cv2.putText(frame, f"Authorized: {name}", (x1, y1 - 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2, cv2.LINE_AA)
+                print(f"✅ Face Match: {name} is authorized.")
+                return True  # Stop further checks if match is found
+        
+        # If no match is found
+        cv2.putText(frame, "Unauthorized Person!", (x1, y1 - 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2, cv2.LINE_AA)
+        print("❌ Unauthorized person detected!")
+    
+    return False  # No match found
+
 
 
 
@@ -261,12 +305,26 @@ def generate_frames(video_source):
                                       frame_alert = True
                                       print("Gender Mismatch Alert:", selected_gender, detected_gender)
 
-                                  # If an alert is triggered, play sound and display alert text
+                               
+                                    # **Perform Face Recognition Check Here**
                                   if frame_alert:
-                                      play_alert()  # Function to play alert sound
-                                      print("Playing alert sound...")
-                                      cv2.putText(frame, "ALERT!", (50, frame.shape[0] - 150), cv2.FONT_HERSHEY_SIMPLEX,
-                                                  1, (0, 0, 255), 2, cv2.LINE_AA)
+                                      face_crop = frame[y1:y2, x1:x2]
+                                      if face_crop.size != 0:
+                                          is_authorized = recognize_face(face_crop, x1, y1, frame)
+                                          if not is_authorized:
+                                              play_alert()  # Alert if unauthorized
+                                              print("🔴 Unauthorized Face Detected - Playing Alert Sound")
+                                              cv2.putText(frame, "ALERT!", (50, frame.shape[0] - 150), cv2.FONT_HERSHEY_SIMPLEX,1, (0, 0, 255), 2, cv2.LINE_AA)
+                                              threading.Thread(target=send_alert_email, args=("viveksapkale022@gmail.com", frame.copy(), person_id)).start() 
+                                  
+
+
+                                  # # If an alert is triggered, play sound and display alert text
+                                  # if frame_alert:
+                                  #     play_alert()  # Function to play alert sound
+                                  #     print("Playing alert sound...")
+                                  #     cv2.putText(frame, "ALERT!", (50, frame.shape[0] - 150), cv2.FONT_HERSHEY_SIMPLEX,
+                                  #                 1, (0, 0, 255), 2, cv2.LINE_AA)
                         
                                   if frame_alert:
                                       current_time = time.time()
@@ -278,9 +336,9 @@ def generate_frames(video_source):
                                           cv2.putText(frame, "ALERT!", (50, frame.shape[0] - 150), cv2.FONT_HERSHEY_SIMPLEX,
                                                       1, (0, 0, 255), 2, cv2.LINE_AA)
 
-                                          # Capture frame and send email in a separate thread
-                                          alert_frame = frame.copy()
-                                          threading.Thread(target=send_alert_email, args=("viveksapkale022@gmail.com", alert_frame, person_id)).start()
+                                          # # Capture frame and send email in a separate thread
+                                          # alert_frame = frame.copy()
+                                          # threading.Thread(target=send_alert_email, args=("viveksapkale022@gmail.com", alert_frame, person_id)).start()
 
                                           # Update last alert time
                                           last_alert_time[person_id] = current_time  
@@ -546,3 +604,27 @@ if __name__ == '__main__':
     if not os.path.exists(app.config['UPLOAD_FOLDER']):
         os.makedirs(app.config['UPLOAD_FOLDER'])
     app.run(host='0.0.0.0', port=5000, debug=True)
+
+
+
+#     You can install the face_recognition library using the following command:
+
+# bash
+# Copy
+# Edit
+# pip install face-recognition
+# Make sure you also have dlib installed, as face_recognition depends on it. If you face issues during installation, you may need to install dlib separately:
+
+# bash
+# Copy
+# Edit
+# pip install dlib
+# If you're using Windows and facing installation issues, install CMake first:
+
+# bash
+# Copy
+# Edit
+# pip install cmake
+# Then try installing dlib and face_recognition again.
+
+# Let me know if you encounter any errors! 🚀
